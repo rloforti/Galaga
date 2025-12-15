@@ -74,9 +74,8 @@ function updatePlayer(dt){
 function updateEnemies(dt){
   for(const e of enemies){
     if(e.state==='entering'){
-      e.t+=dt*0.5; // speed of entry
+      e.t+=dt*0.5;
       const t=e.t;
-      // simple bezier curve from start to target
       const cx=(e.x+e.targetX)/2;
       const cy=e.y-100;
       e.x=(1-t)*(1-t)*e.x+2*(1-t)*t*cx+t*t*e.targetX;
@@ -89,23 +88,45 @@ function updateEnemies(dt){
         e.phase=0;
         e.diveTimer=3+Math.random()*5;
       }
+      // 🔥 Normal enemies shoot occasionally while in formation
+      if(Math.random()<0.002){
+        shootEnemyBullet(e);
+      }
     } else if(e.state==='diving'){
       e.phase+=dt*2;
       e.x+=Math.sin(e.phase*2)*120*dt;
       e.y+=200*dt;
       if(e.y>H){ e.state='formation'; e.x=e.targetX; e.y=e.targetY; }
+      // 🔥 Enemies fire more often during dives
+      if(Math.random()<0.01){
+        shootEnemyBullet(e);
+      }
     }
   }
+}
+
+function shootEnemyBullet(e){
+  const sx=e.x, sy=e.y;
+  const speed=280;
+  const dx=player.x-sx;
+  const dy=player.y-sy;
+  const mag=Math.hypot(dx,dy)||1;
+  eBullets.push({
+    x:sx, y:sy, w:4, h:12,
+    vx:(dx/mag)*speed,
+    vy:(dy/mag)*speed
+  });
 }
 
 function updateBullets(dt){
   for(const b of bullets) b.y+=b.vy*dt;
   for(const eb of eBullets){ eb.x+=eb.vx*dt; eb.y+=eb.vy*dt; }
-  bullets.filter(b=>b.y>-20);
-  eBullets.filter(b=>b.y<H+20);
+  for(let i=bullets.length-1;i>=0;i--) if(bullets[i].y<-20) bullets.splice(i,1);
+  for(let i=eBullets.length-1;i>=0;i--) if(eBullets[i].y>H+20) eBullets.splice(i,1);
 }
 
 function doCollisions(){
+  // player bullets vs enemies
   for(let i=bullets.length-1;i>=0;i--){
     const b=bullets[i];
     for(const e of enemies){
@@ -114,11 +135,30 @@ function doCollisions(){
       }
     }
   }
+  // enemy bullets vs player
+  if(player.alive){
+    for(let i=eBullets.length-1;i>=0;i--){
+      const eb=eBullets[i];
+      const pr={x:player.x-player.w/2,y:player.y-player.h/2,w:player.w,h:player.h};
+      if(rectsOverlap(eb,pr)){
+        eBullets.splice(i,1);
+        lives-=1;
+        player.alive=false;
+        setTimeout(respawnPlayer,1200);
+        break;
+      }
+    }
+  }
 }
 
 function checkWave(){
   enemies=enemies.filter(e=>e.hp>0);
   if(enemies.length===0){ wave++; makeWave(10,5); }
+}
+
+function respawnPlayer(){
+  if(lives<=0){ running=false; return; }
+  player.x=W/2; player.y=H-60; player.alive=true; player.fireCooldown=0;
 }
 
 // --- DRAW ---
@@ -137,6 +177,15 @@ function drawEnemies(){
 function drawBullets(){
   ctx.fillStyle='#0ff';
   for(const b of bullets) ctx.fillRect(b.x-2,b.y-6,4,12);
+  ctx.fillStyle='#f33';
+  for(const eb of eBullets) ctx.fillRect(eb.x-2,eb.y-6,4,12);
+}
+function drawHUD(){
+  ctx.fillStyle='#0ff';
+  ctx.font='16px monospace';
+  ctx.fillText(`Score: ${score}`,10,20);
+  ctx.fillText(`Lives: ${lives}`,W-100,20);
+  ctx.fillText(`Wave: ${wave}`,W/2-40,20);
 }
 
 // --- LOOP ---
@@ -153,7 +202,7 @@ function loop(ts){
   drawFrame();
   requestAnimationFrame(loop);
 }
-function drawFrame(){ clear(); drawEnemies(); drawPlayer(); drawBullets(); }
+function drawFrame(){ clear(); drawEnemies(); drawPlayer(); drawBullets(); drawHUD(); }
 
 // --- START ---
 function startGame(){ score=0;lives=3;wave=1;bullets.length=0;eBullets.length=0;makeWave();running=true;last=0;requestAnimationFrame(loop); }
